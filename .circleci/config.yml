@@ -1,0 +1,85 @@
+version: 2.1
+
+jobs:
+  jest-tests:
+    docker:
+      - image: cimg/node:20.11
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            - v1-dependencies-{{ checksum "package.json" }}
+            - v1-dependencies-
+      - run:
+          name: Install dependencies
+          command: npm ci
+      - save_cache:
+          paths:
+            - node_modules
+          key: v1-dependencies-{{ checksum "package.json" }}
+      - run:
+          name: Run Jest tests
+          command: npm test
+
+  markdown-linting:
+    docker:
+      - image: cimg/node:20.11
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            - v1-dependencies-{{ checksum "package.json" }}
+            - v1-dependencies-
+      - run:
+          name: Install dependencies
+          command: npm ci
+      - save_cache:
+          paths:
+            - node_modules
+          key: v1-dependencies-{{ checksum "package.json" }}
+      - run:
+          name: Run markdown linting
+          command: npm run lint:md || true
+
+  link-checking:
+    docker:
+      - image: cimg/node:20.11
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            - v1-dependencies-{{ checksum "package.json" }}
+            - v1-dependencies-
+      - run:
+          name: Install dependencies
+          command: npm ci
+      - save_cache:
+          paths:
+            - node_modules
+          key: v1-dependencies-{{ checksum "package.json" }}
+      - run:
+          name: Check for dead links
+          command: npm run test:links
+
+  validate-plugin:
+    docker:
+      - image: cimg/node:20.11
+    steps:
+      - checkout
+      - run:
+          name: Install Claude CLI
+          command: |
+            sudo npm install -g @anthropic-ai/claude-code
+      - run:
+          name: Validate plugin configuration
+          command: |
+            claude plugin validate .
+
+workflows:
+  version: 2
+  test-and-validate:
+    jobs:
+      - jest-tests
+      - markdown-linting
+      - link-checking
+      - validate-plugin
