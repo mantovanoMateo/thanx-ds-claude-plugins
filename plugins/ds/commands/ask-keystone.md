@@ -99,10 +99,13 @@ Do not use curl or raw API calls — the Notion MCP handles
 authentication, rate limiting, and error handling.
 
 1. **Find the database**: Use `notion-search` to locate the
-   "Knowledge Gaps" database. Confirm its ID before creating a page.
-2. **Create the page**: Use `notion-create-pages` with:
-   - `parent`: the Knowledge Gaps database ID
-   - `properties`: Name (title), Question Type (select), Tags (multi_select)
+   "Knowledge Gaps" database.
+2. **Get the schema**: Use `notion-fetch` on the database URL to
+   retrieve the data source ID and property schema. Do not assume
+   property names — read them from the schema.
+3. **Create the page**: Use `notion-create-pages` with:
+   - `parent`: the data_source_id from the fetch result
+   - `properties`: match the schema (title, select, multi_select)
    - Page content: structure the answer with headings, paragraphs,
      code blocks, and bullet lists as appropriate
 
