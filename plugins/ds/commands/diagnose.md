@@ -172,8 +172,9 @@ Save this questionnaire to `.context/diagnoses/[partner-name-slug]-questionnaire
 ## Rules
 
 1. **Always use the thanx-docs MCP server** to verify endpoint paths, headers, and auth details. Do not guess.
-2. If the email mentions capabilities spanning multiple APIs, design the guide with separate tracks per API.
-3. Always recommend starting with sandbox credentials.
-4. Flag any requirements that Thanx may not support in Additional Considerations.
-5. Create the `.context/diagnoses/` directory if it doesn't exist before saving the file.
-6. Do not send any communication to the partner. Present the guide for human review.
+2. **Sanitize partner name slugs** before using in file paths: lowercase, replace spaces/special characters with hyphens, remove path-unsafe characters (`/`, `\\`, `..`), collapse consecutive hyphens, and trim leading/trailing hyphens. Example: "Bosque Brewing Co." becomes `bosque-brewing-co`.
+3. If the email mentions capabilities spanning multiple APIs, design the guide with separate tracks per API.
+4. Always recommend starting with sandbox credentials.
+5. Flag any requirements that Thanx may not support in Additional Considerations.
+6. Create the `.context/diagnoses/` directory if it doesn't exist before saving the file.
+7. Do not send any communication to the partner. Present the guide for human review.

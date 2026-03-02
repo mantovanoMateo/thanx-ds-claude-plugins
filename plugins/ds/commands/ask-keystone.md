@@ -94,84 +94,32 @@ Proposed Notion page:
 Publish to Knowledge Gaps? (yes/no)
 ```
 
-**After explicit approval**, read the `.env` file at the project root
-to get `NOTION_API_TOKEN` and `NOTION_DATABASE_ID`.
-If no `.env` file exists, ask the user for credentials or skip.
+**After explicit approval**, use the **Notion MCP** tools to publish.
+Do not use curl or raw API calls — the Notion MCP handles
+authentication, rate limiting, and error handling.
 
-Create the page using `curl`:
+1. **Find the database**: Use `notion-search` to locate the
+   "Knowledge Gaps" database. Confirm its ID before creating a page.
+2. **Create the page**: Use `notion-create-pages` with:
+   - `parent`: the Knowledge Gaps database ID
+   - `properties`: Name (title), Question Type (select), Tags (multi_select)
+   - Page content: structure the answer with headings, paragraphs,
+     code blocks, and bullet lists as appropriate
 
-```bash
-curl -s -X POST "https://api.notion.com/v1/pages" \
-  -H "Authorization: Bearer $NOTION_API_TOKEN" \
-  -H "Notion-Version: 2022-06-28" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "parent": {"database_id": "$NOTION_DATABASE_ID"},
-    "properties": {
-      "Name": {
-        "title": [{"text": {"content": "<question title>"}}]
-      },
-      "Question Type": {
-        "select": {"name": "<question type>"}
-      },
-      "Tags": {
-        "multi_select": [{"name": "<tag1>"}, {"name": "<tag2>"}]
-      }
-    },
-    "children": [<Notion block objects>]
-  }'
-```
-
-Report the result and share the Notion URL from the response.
-
-**Notion block format reference** for the `children` array:
-
-```json
-// Paragraph
-{"object": "block", "type": "paragraph",
- "paragraph": {"rich_text": [
-   {"type": "text", "text": {"content": "text here"}}]}}
-
-// Heading 2
-{"object": "block", "type": "heading_2",
- "heading_2": {"rich_text": [
-   {"type": "text", "text": {"content": "heading"}}]}}
-
-// Heading 3
-{"object": "block", "type": "heading_3",
- "heading_3": {"rich_text": [
-   {"type": "text", "text": {"content": "heading"}}]}}
-
-// Code block
-{"object": "block", "type": "code",
- "code": {"rich_text": [
-   {"type": "text", "text": {"content": "code here"}}],
-   "language": "ruby"}}
-
-// Bulleted list item
-{"object": "block", "type": "bulleted_list_item",
- "bulleted_list_item": {"rich_text": [
-   {"type": "text", "text": {"content": "item"}}]}}
-
-// Bold text (within rich_text)
-{"type": "text", "text": {"content": "bold text"},
- "annotations": {"bold": true}}
-
-// Divider
-{"object": "block", "type": "divider", "divider": {}}
-```
-
-**Important**: Notion has a limit of 100 blocks per request and
-2000 characters per rich_text element. If your answer is very long,
-split text across multiple paragraph blocks.
+Report the result and share the Notion page URL.
 
 ## Step 5: Save a Local Copy
 
 Save the answer locally as a backup:
 
 1. Create the directory `.context/keystone-answers/` if it doesn't exist
-2. Generate a slug from the question
-   (e.g., "How does basket refund work?" becomes `basket-refund-behavior`)
+2. Generate a slug from the question:
+   - Convert to lowercase
+   - Replace spaces and punctuation with hyphens
+   - Remove path-unsafe characters (`/`, `\`, `..`)
+   - Collapse consecutive hyphens and trim leading/trailing hyphens
+   - Limit to 50 characters
+   - Example: "How does basket refund work?" becomes `how-does-basket-refund-work`
 3. Write the file to `.context/keystone-answers/YYYY-MM-DD-<slug>.md`
    with the full answer content
 
@@ -179,21 +127,22 @@ Save the answer locally as a backup:
 
 1. **Always use Keystone MCP tools** to find answers.
    Do not guess or rely on assumptions about the codebase.
-2. **Show your sources** - include file paths (repo + path) and
+2. **Sanitize slugs** for file paths: lowercase, replace
+   spaces/punctuation with hyphens, remove path-unsafe characters,
+   collapse consecutive hyphens, limit to 50 characters.
+3. **Show your sources** - include file paths (repo + path) and
    line numbers when referencing code.
-3. **Use read-only operations only** - never modify code, data,
+4. **Use read-only operations only** - never modify code, data,
    or infrastructure through Keystone.
-4. **If you can't find the answer**, say so clearly and suggest
+5. **If you can't find the answer**, say so clearly and suggest
    what the user could try (e.g., which repo to look in, who to ask).
-5. **For database queries**, always use `LIMIT` clauses and avoid
+6. **For database queries**, always use `LIMIT` clauses and avoid
    selecting unnecessary columns. PII will be automatically masked.
-6. **Combine sources** when useful - e.g., find the code with
+7. **Combine sources** when useful - e.g., find the code with
    `search_code`, then check recent changes with `git_file_history`,
    then verify behavior with `replica_query`.
-7. **Propose publishing** to Notion after presenting the answer.
+8. **Propose publishing** to Notion after presenting the answer.
    Wait for explicit user approval before creating the page.
-   If Notion credentials are unavailable, save locally and inform
-   the user.
-8. **Never display credentials** - do not echo, print, or include
-   `NOTION_API_TOKEN` or other secrets in conversation output.
-   Use environment variable references in shell commands.
+   Use the Notion MCP tools — never raw API calls or curl.
+9. **Never display credentials** - do not echo, print, or include
+   secrets in conversation output.
