@@ -33,10 +33,14 @@ Arguments: $ARGUMENTS
 Determine the input type:
 
 - **Front conversation URL:** Extract the conversation ID. Fetch using the Front
-  MCP tool (`front_get_conversation`, `front_list_conversation_messages`). Read
-  the full thread to understand history.
+  MCP tools (`front_get_conversation` to get metadata, `front_list_messages` to
+  read the full thread history).
 - **Free-text:** Treat as the raw partner message. Ask the user for the partner
   name if not obvious from the content.
+
+**If Front MCP tools are unavailable:** Ask the user to paste the partner's
+message and any relevant thread history directly. The command can operate on
+free-text input alone — Front MCP enriches context but is not required.
 
 Check for the `--internal` flag. If present, this is an internal message draft
 (Slack or Jira) — skip partner salutation/signoff requirements and follow the
@@ -149,6 +153,10 @@ If any question requires technical verification you can perform:
 2. **Keystone Knowledge:** Use `knowledge_search` for previously documented answers
 3. **Keystone Code:** Use `search_code` if the question involves specific API
    behavior that can be verified in the codebase
+
+**If research tools are unavailable:** Do not block the draft. Mark unverified
+claims with a `⚠️ Unverified` tag inline and list them in the post-draft review.
+The user can verify manually before sending.
 
 Note what you found and what you could not verify. Do NOT present Keystone
 answers about undocumented behavior as confirmed facts.
@@ -297,11 +305,11 @@ Suggested Actions:
 If the user provides a Front conversation URL, also include:
 
 ```text
-To send this draft, save it to a file and run:
-  python3 scripts/front-tickets.py --draft <conversation_id> --message-file /path/to/draft.txt
+To create a draft in Front (review before sending):
+  python3 scripts/front-tickets.py --draft <conversation_id> "paste message here"
 
-Or pipe it directly:
-  echo "<message>" | python3 scripts/front-tickets.py --draft <conversation_id> --stdin
+To send directly:
+  python3 scripts/front-tickets.py --send <conversation_id> "paste message here"
 ```
 
 ### Internal Message Output
