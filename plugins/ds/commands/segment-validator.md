@@ -49,8 +49,10 @@ For each unique rule type identified in Step 2, use Keystone MCP tools to read t
 
 1. **Read the rule model**: Use `read_file` to read `thanx-nucleus:app/models/target/rule/{type}.rb` for each rule type
 2. **Read the README**: Use `read_file` to read `thanx-nucleus:app/models/target/README.md` for the full targeting DSL documentation
-3. **Check field definitions**: If the rule uses fields you need to understand (e.g., `purchased_at`, `segment`, `state`, `source`), search for their validation in `thanx-nucleus:app/classes/target/rule/validator.rb` and `thanx-nucleus:app/classes/target/rule/field_validators.rb`
+3. **Check field definitions**: For each field referenced in the rule (e.g., `purchased_at`, `segment`, `state`, `source`), search for its validation and allowed values in `thanx-nucleus:app/classes/target/rule/validator.rb` and `thanx-nucleus:app/classes/target/rule/field_validators.rb`
 4. **Check valid segment values**: If the rule uses `type: "segment"`, read `thanx-nucleus:app/models/segment.rb` to confirm valid segment labels (member, vip, daily, weekly, etc.)
+
+If a rule type's `.rb` file is not found at the expected path, use `search_code` or `find_files` to search the repository for the rule class definition before reporting it as unknown.
 
 This is mandatory - do NOT rely on assumptions about what rule fields mean. Always verify against the source code.
 
@@ -65,8 +67,8 @@ Using the source code from Step 3, translate the JSON rule into a precise, plain
    - `-` - "users who match the first condition EXCEPT those who match the second"
 3. For each leaf rule, describe exactly what it targets based on the source code:
    - Include the field name, operator, and value
-   - Translate operators to readable form: `eq` = "equals", `gte` = "on or after", `lte` = "on or before", `gt` = "greater than", `lt` = "less than", `in` = "is one of", `not_in` = "is not one of"
-   - For date fields, note whether they are absolute dates or relative
+   - Translate operators to readable form based on what the source code reveals. Common examples: `eq` = "equals", `gte` = "on or after", `lte` = "on or before", `gt` = "greater than", `lt` = "less than", `in` = "is one of", `not_in` = "is not one of" — but always check the rule model for the full set of supported operators per field
+   - For date fields, distinguish between absolute dates (ISO 8601 format like `"2024-01-01T00:00:00Z"`) and relative dates (offset expressions like `"7 days ago"` if supported by the field)
    - For segment rules, name the specific segment labels
 4. Present this as a structured breakdown:
 
@@ -149,4 +151,4 @@ The rule cannot be validated because it contains structural errors.
 4. **Check date formats.** Dates in rules use ISO 8601 format. Flag any that look malformed.
 5. **Do not modify any data.** This command is read-only. Never create, update, or delete segments.
 6. **When uncertain about a field's meaning**, say so and cite the source file where you looked. Do not present uncertain interpretations as fact.
-7. **If Keystone is unavailable**, fall back to the known rule types documented in this command but clearly state that the validation was done without live source code verification.
+7. **If Keystone is unavailable**, report that validation could not be completed without Keystone access. Do not attempt to validate rules based on assumptions alone.
