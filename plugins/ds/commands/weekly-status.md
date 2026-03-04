@@ -44,7 +44,7 @@ or
 
 Pull the current state of the Dev Support inbox using Front MCP tools. To avoid rate limit exhaustion (each Front search costs ~40% of the rate limit budget), consolidate into a single broad query and classify results client-side.
 
-1. **Single search**: Use `front_search` to query the Dev Support inbox for all recent conversations. Limit to the 10 most recent open conversations to stay within rate limits.
+1. **Single search**: Use `front_search` to query the Dev Support inbox for all recent conversations across all states (open, waiting, resolved). Limit to the 10 most recent conversations to stay within rate limits.
 2. **Classify results** from the single search into:
    - **Open tickets**: Conversations still awaiting a DS response. For each, capture conversation ID, subject, partner/merchant name, last message date and sender, and Front tags.
    - **Waiting tickets**: Conversations where DS sent the last message. Note how many business days since the last DS reply.
@@ -111,8 +111,11 @@ ACTIVE ITEMS
 
 NEWS & UPDATES
 - [What happened: PR merged, process change, command shipped, etc.]
+  Ref: [Jira: key | PR: link | N/A for general updates]
 - [Resolved ticket worth mentioning]
+  Front: [cnv_id] | Jira: [ticket key if applicable]
 - [Jira ticket status change]
+  Jira: [ticket key]
 ```
 
 **Hot topic criteria** (any of these qualifies):
@@ -140,6 +143,7 @@ Blockers
 ```
 
 If there are no blockers, write:
+
 ```text
 Blockers
 - None
@@ -179,4 +183,4 @@ Do not send any message, post to any Slack channel, or update any ticket. Presen
 4. **Be honest about data gaps.** If a data source was unavailable, say so. Do not fabricate status from memory or assumptions.
 5. **Keep async updates concise.** The Slack thread format should be scannable — aim for 3-7 bullets per section, not a wall of text.
 6. **Use business days for timing.** "2 days waiting" means 2 business days, not calendar days. Weekends do not count.
-7. **Do not include automated noise.** Exclude Apple membership notifications, automated system emails, and other non-actionable items from the status update.
+7. **Do not include automated noise.** Exclude Apple membership notifications, automated system emails, automated Jira transitions, CI/CD build notifications, bot-generated comments, and other non-actionable items from the status update.
