@@ -49,11 +49,10 @@ If ambiguous, list all applicable types ranked by likelihood. If too vague to cl
 
 Using the **thanx-docs** MCP server, perform these searches. This is mandatory - do NOT rely on prior knowledge alone:
 
-1. Search for the overview/guide for the identified integration type
-2. Search for authentication requirements for the identified API
-3. Search for each specific endpoint the partner will need based on their stated needs
-4. Search for certification requirements
-5. If webhooks, data exports, or other supplementary features were mentioned, search for those too
+1. Search for the overview/guide for the identified integration type (this often covers auth and certification)
+2. Search for each specific endpoint the partner will need that was NOT already covered by the overview
+3. If webhooks, data exports, or other supplementary features were mentioned, search for those too
+4. Limit to 8 total doc searches. If more are needed, present what you have and ask the user whether to continue
 
 **If the thanx-docs MCP server is unavailable, errors, or times out:**
 Stop and output "Blocked by docs retrieval" followed by the Discovery
@@ -62,7 +61,7 @@ auth headers, or certification requirements.
 
 ## Step 4: Generate Integration Guide
 
-Create the guide as a markdown file saved to `.context/diagnoses/[partner-name-slug].md`.
+Create the guide as a markdown file saved to `.context/diagnoses/[partner-name-slug]-YYYY-MM-DD.md`.
 If Partner Name cannot be determined, use `unknown-partner-YYYY-MM-DD` as the slug.
 
 Use this structure:

@@ -58,11 +58,16 @@ Be thorough:
 3. **Follow references**: If code references other files, models,
    or services, trace those too
 4. **Check the database**: If relevant, use `replica_query` against
-   the appropriate database to understand schema or data patterns
-   (SELECT only, read-only). Never interpolate user-provided text
+   the appropriate database to understand schema or data patterns.
+   Always include LIMIT (max 100 rows) and select only needed columns.
+   Never interpolate user-provided text
    directly into SQL — use parameterized queries or literal values only
 5. **Cross-reference docs**: Use the **thanx-docs** MCP to supplement
    with official API documentation when relevant
+
+Limit exploration to 8-10 tool calls total. If the answer requires
+deeper investigation, present partial findings and ask the user
+whether to continue.
 
 ## Step 3: Synthesize the Answer
 
@@ -115,6 +120,10 @@ authentication, rate limiting, and error handling.
      code blocks, and bullet lists as appropriate
 
 Report the result and share the Notion page URL.
+
+**If any Notion MCP call fails** (database not found, permissions error, MCP
+unavailable): report the error to the user and note the answer was still saved
+locally via Step 5. Do not retry or attempt raw API calls as a workaround.
 
 ## Step 5: Save a Local Copy
 
