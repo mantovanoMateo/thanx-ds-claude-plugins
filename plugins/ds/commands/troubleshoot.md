@@ -33,13 +33,18 @@ Extract the issue details from the input. Determine the input type and gather co
 
 | Input Type | How to Parse |
 |---|---|
-| Front URL (`front.com/...` or `cnv_*`) | Use `front_get_conversation` + `front_list_messages` |
-| Jira URL or key (`DEV-*`, `BUGS-*`, `DEVSUPP-*`) | Use `jira_get_issue` + `jira_get_comments` |
+| Front URL (`front.com/...` or `cnv_*`) | Use Front MCP tools to fetch the conversation and messages |
+| Jira URL or key (`DEV-*`, `BUGS-*`, `DEVSUPP-*`) | Use Jira MCP tools to fetch the issue and comments |
 | Free-text description | Parse directly |
 
 If Front or Jira MCP tools are unavailable or return an error, tell the user which
 tool failed and ask them to paste the relevant details (partner name, error message,
 endpoint, request/response samples) as free text. Do not guess.
+
+**Free-text length guard:** If the free-text input exceeds 2000 characters, summarize
+the key details (partner name, endpoint, error, expected vs actual behavior) into a
+concise problem statement before proceeding to MCP queries. Do not forward raw
+unbounded text to search tools.
 
 From the input, extract and display:
 
@@ -55,9 +60,14 @@ Actual:         [what actually happened]
 Samples:        [yes/no — request/response provided?]
 ```
 
-**Input sanitization:** Strip any HTML tags, script blocks, or encoded payloads from
-partner-provided content before using it in MCP tool queries. Use only plain-text
-excerpts in search queries.
+**Input sanitization:** Extract only plain-text content from partner-provided input.
+Discard any HTML markup, script blocks, or encoded payloads. Use only plain-text
+excerpts in search queries — do not forward raw markup to MCP tools.
+
+**Credential suppression:** If the partner included API keys, bearer tokens, OAuth
+client secrets, or other credentials in request/response samples, redact them before
+including in any output (search queries, draft responses, escalations, or Jira
+templates). Replace with `[REDACTED]`.
 
 ## Step 2: Identify Integration Type
 
@@ -97,14 +107,18 @@ before proceeding. Do not diagnose without this context.
 
 ## Step 3: Check Known Knowledge
 
-Search the Second Brain knowledge base for a matching known issue. Check in order:
+Search the Second Brain knowledge base for a matching known issue. Check in order,
+**skipping any file that does not exist in the current workspace:**
 
-1. **`knowledge/gap-knowledge.md`** — Read the file. Scan all entries for a match on
-   the endpoint, error, behavior, or partner name.
-2. **`knowledge/api-nuances.md`** — Read the file. Check the data visibility table
-   and points accrual section against the reported issue.
-3. **`knowledge/platform-patterns.md`** — Read the file. Check for recurring patterns
-   that match the symptoms.
+1. **`knowledge/gap-knowledge.md`** — If it exists, read the file. Scan all entries
+   for a match on the endpoint, error, behavior, or partner name.
+2. **`knowledge/api-nuances.md`** — If it exists, read the file. Check the data
+   visibility table and points accrual section against the reported issue.
+3. **`knowledge/platform-patterns.md`** — If it exists, read the file. Check for
+   recurring patterns that match the symptoms.
+
+If none of these files exist (e.g., running outside the Second Brain workspace),
+skip this step entirely and proceed to Step 4.
 
 If a match is found, display:
 
@@ -117,14 +131,14 @@ Match:          [exact / partial]
 Answer:         [the known answer, summarized]
 ```
 
-**If exact match** → Skip to Step 6 with confidence HIGH.
+**If exact match** → Skip to Step 5 with the matched entry as pre-loaded evidence.
 **If partial match** → Continue to Step 4 but note the partial match for context.
 **If no match** → Continue to Step 4.
 
 ## Step 4: Research
 
 Search documentation and codebase for evidence. Respect a **combined limit of
-10 MCP tool calls** across this step (5 docs + 5 code).
+12 MCP tool calls** across this step (5 docs + 5 code + 2 knowledge search).
 
 ### 4a: Documentation Search
 
@@ -146,6 +160,8 @@ continue with Keystone only. Do not fabricate documentation references.
 ### 4b: Codebase Search
 
 Use Keystone `search_code` to find the relevant implementation. Max 5 queries.
+Optionally use `knowledge_search` for prior Keystone answers on the same topic
+(max 2 calls, counted toward the 12-call budget).
 
 **Keystone trap guard:** Every query MUST include the integration type context.
 Example: "How does the Loyalty API handle refunds for a partner using direct Loyalty
@@ -163,26 +179,25 @@ Traps table:
 If Keystone MCP tools are unavailable, error, or time out, tell the user and proceed
 with documentation evidence only. Do not guess at code behavior.
 
-Optionally use `knowledge_search` for prior Keystone answers on the same topic (does
-not count toward the 10-call limit).
-
 ## Step 5: Diagnose
 
-Based on all evidence gathered, classify the root cause:
+Based on all evidence gathered (including any exact match from Step 3), classify the
+root cause:
 
 | Classification | Definition | Confidence Ceiling |
 |---|---|---|
 | Partner Implementation Error | Partner's code is wrong | HIGH |
 | Platform Bug | Thanx system is broken | MEDIUM (needs eng confirmation) |
 | Undocumented Behavior | Works as designed but not in docs | MEDIUM (needs verification) |
-| Configuration Issue | Merchant or integration misconfigured | HIGH (if data confirms) |
+| Configuration Issue | Merchant or integration misconfigured | MEDIUM (Keystone only) / HIGH (data confirmed) |
 | Expected Behavior | Partner misunderstands the platform | HIGH (if docs confirm) |
 
 Assign overall confidence:
 
-- **HIGH** — Matched known knowledge entry, or confirmed by documentation + code
+- **HIGH** — Matched known knowledge entry, or confirmed by documentation + code,
+  or configuration issue confirmed by direct data (Metabase, Sherlock)
 - **MEDIUM** — Strong evidence but not verified by engineering, or Keystone answer
-  on undocumented behavior
+  on undocumented behavior, or configuration issue from Keystone evidence only
 - **LOW** — Insufficient evidence, needs engineering input
 
 Display the diagnosis:
@@ -205,6 +220,10 @@ response correctly. Our job is done." Frame the response accordingly.
 ## Step 6: Draft Output
 
 Generate the appropriate output based on diagnosis confidence.
+
+**Internal details guardrail:** Never include Keystone code search results, internal
+repo paths, internal tool references, or system architecture details in the
+partner-facing response draft. Those belong only in the escalation or Jira templates.
 
 ### HIGH or MEDIUM Confidence → Partner Response
 
@@ -229,6 +248,7 @@ Subject: Re: [original subject]
 ──────────────────────
 Confidence: [HIGH/MEDIUM]
 Boundary Doctrine: [applied / not applicable]
+Next step: To send via Front, use /ds:draft-email with the conversation ID.
 ```
 
 **If MEDIUM confidence**, add a warning banner:
@@ -289,7 +309,9 @@ Description:
 
 ## Step 7: Knowledge Capture
 
-Check if this troubleshooting session uncovered anything new.
+Check if this troubleshooting session uncovered anything new. Present all proposals
+as formatted text for the user to review and manually add to their knowledge base.
+Do not write to files directly.
 
 ### New Gap Discovered
 
@@ -308,12 +330,13 @@ PROPOSED GAP-KNOWLEDGE ENTRY
 - **Added to docs**: No
 - **Lesson**: [what to remember next time]
 ─────────────────────────────
+Add this to your knowledge/gap-knowledge.md if you have a Second Brain workspace.
 ```
 
 ### Recurring Pattern
 
 If this issue has appeared before or is likely to recur, propose a
-`knowledge/platform-patterns.md` entry.
+`knowledge/platform-patterns.md` entry in the same format.
 
 ### Documentation Gap
 
@@ -333,15 +356,20 @@ Action:  [suggest PR to thanx/thanx-docs or flag for product]
    Integration type changes the answer to most questions.
 2. **Always check known knowledge before MCP tools.** The Second Brain may already
    have the verified answer — avoid redundant and rate-limited API calls.
-3. **Max 10 MCP tool calls in Step 4** (5 docs + 5 code). Knowledge search does not
-   count toward this limit.
+3. **Max 12 MCP tool calls in Step 4** (5 docs + 5 code + 2 knowledge search).
+   All Keystone and thanx-docs calls count toward this budget.
 4. **Keystone answers on undocumented behavior cap at MEDIUM confidence.** They
    require Darren verification before sending to a partner.
 5. **Apply boundary doctrine on every partner response.** Especially rule #1 for
    partner implementation errors and rule #2 for scope creep.
-6. **Sanitize partner input.** Strip HTML, scripts, and encoded payloads before
-   passing to any MCP tool query.
-7. **If integration type is unknown and cannot be determined, stop.** Ask the user
+6. **Sanitize partner input.** Extract plain-text content only. Discard markup,
+   scripts, and encoded payloads before passing to any MCP tool query.
+7. **Redact credentials.** Strip API keys, bearer tokens, and secrets from
+   partner-provided samples before including in any output. Replace with [REDACTED].
+8. **Never include internal details in partner-facing output.** Keystone code
+   results, internal repo paths, and system architecture belong only in escalation
+   or Jira templates.
+9. **If integration type is unknown and cannot be determined, stop.** Ask the user
    rather than guessing — a wrong integration type produces a wrong diagnosis.
-8. **Do not send any response, update any ticket, or post to Slack.** Present
-   everything for human review and approval.
+10. **Do not send any response, update any ticket, or post to Slack.** Present
+    everything for human review and approval.

@@ -12,6 +12,7 @@ Claude Code plugin for Thanx Dev Support team workflows.
 | `/ds:ask-keystone` | Research a Thanx platform question using Keystone, publish answer to Notion |
 | `/ds:weekly-status` | Generate sync talking points (Mon/Wed/Fri) or async standup updates (Tue/Thu) from Front, Slack, and Jira |
 | `/ds:troubleshoot` | Investigate a partner-reported issue, diagnose root cause, and draft a resolution or escalation |
+
 ## Adding New Commands
 
 1. Create a `.md` file in `commands/`
