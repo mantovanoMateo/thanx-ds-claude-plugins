@@ -1,29 +1,32 @@
 ---
-description: Validate a partner integration against Thanx API documentation and generate a certification report.
+description: Validate a partner integration against Thanx API documentation using DataDog traces and generate a certification report.
 ---
 
 # Certify Partner Integration
 
-Validate a partner's API integration by checking every API call they make against
-the official Thanx documentation. Accepts partner-provided payloads, headers, and
-endpoint references, verifies each one against thanx-docs MCP, and generates a
-certification report with PASS/FAIL per check and actionable remediation steps.
+Validate a partner's API integration by pulling their actual API calls from DataDog
+and checking each one against the official Thanx documentation. The partner provides
+the endpoints they use and their credentials — the command finds the real requests
+in DataDog, verifies headers, payloads, and field mappings against thanx-docs MCP,
+and generates a certification report with PASS/FAIL per check and remediation steps.
 
 ## Usage
 
 ```bash
-/ds:certify <partner> <evidence>
+/ds:certify <partner> <endpoints_and_credentials>
 ```
 
 **Required:**
 - `partner` — Partner name or Front/Jira URL with certification context
-- `evidence` — API call details: pasted payloads, curl commands, Postman exports,
-  code snippets, or a description of every API call the partner makes
+- `endpoints_and_credentials` — List of API endpoints the partner uses and the
+  credentials (API key, OAuth client ID, or merchant identifier) they authenticate
+  with, so we can find their calls in DataDog
 
 **Optional (inline flags):**
 - `--type <integration_type>` — Override integration type detection
 - `--recheck` — Re-certification mode: validate only previously failed items plus
   a sanity check on passed items
+- `--days <N>` — How many days back to search DataDog (default: 7)
 
 ---
 
@@ -45,10 +48,10 @@ Determine the partner and collect integration context:
 If Front or Jira MCP tools are unavailable or return an error, tell the user which
 tool failed and ask them to paste the relevant details. Do not guess.
 
-**Credential suppression:** If the partner's API keys, bearer tokens, OAuth client
-secrets, or other credentials are included in the evidence, redact them in all output.
-Replace with `[REDACTED]`. Never include real credentials in the certification report,
-emails, or any other output.
+**Credential handling:** The partner credentials provided (API key, OAuth client ID,
+merchant ID) are used solely to query DataDog for their API calls. Redact all
+credentials in the certification report and any output. Replace with `[REDACTED]`.
+Never include real credentials in emails or tracking updates.
 
 Display the partner summary:
 
@@ -60,39 +63,67 @@ Integration:    [type — Native Ordering / Loyalty API / Consumer UX / POS / et
 POS Partner:    [if applicable]
 Ordering:       [if applicable]
 Certification:  [first / re-certification]
-Source:         [Front / Jira / partner file / free-text]
+Credentials:    [REDACTED — type only: API key / OAuth client / merchant ID]
+Endpoints:      [list of endpoints the partner says they use]
 ```
 
 If integration type is unknown, stop and ask the user before proceeding.
 
-## Step 2: Parse API Evidence
+## Step 2: Pull Actual API Calls from DataDog
 
-Extract every API call from the partner-provided evidence. For each call, capture:
+Using the partner's credentials and endpoint list, query DataDog to find their
+actual API requests.
 
-- HTTP method and endpoint URL
-- Headers (especially `Accept-Version`, `Content-Type`, `Authorization` type)
+Use Keystone DataDog MCP tools:
+
+1. **`datadog_spans`** — Search for API request spans matching the partner's
+   credentials or client identifier. Filter by:
+   - Service name (e.g., `thanx-api`, `thanx-core`)
+   - Endpoint path (from the endpoints list)
+   - Time range (default: last 7 days, or `--days` flag)
+   - Partner identifier (API key, client ID, or merchant ID in request attributes)
+
+2. **`datadog_logs`** — If spans do not contain full request/response detail,
+   search logs for the same time range and partner identifiers.
+
+For each endpoint the partner listed, capture:
+
+- HTTP method and full URL path
+- Request headers (Accept-Version, Content-Type, Authorization type)
 - Request body (fields, values, structure)
-- Response handling (if provided — how they process the response)
+- Response status code
+- Response body (if available in traces)
+- Timestamp of the request
 
 Organize into a numbered list:
 
 ```text
-API CALLS IDENTIFIED
-────────────────────
-1. [METHOD] [endpoint] — [purpose]
-   Headers: [key headers noted]
+API CALLS FOUND IN DATADOG
+──────────────────────────
+1. [METHOD] [endpoint] — [timestamp]
+   Status:  [response code]
+   Headers: [key headers]
    Body fields: [list of fields sent]
+   Response: [summary]
 
-2. [METHOD] [endpoint] — [purpose]
+2. [METHOD] [endpoint] — [timestamp]
    ...
+
+ENDPOINTS NOT FOUND
+───────────────────
+- [any endpoints the partner listed but no DataDog traces were found for]
 ```
 
-**If the evidence is ambiguous or incomplete**, list what was found and ask the user
-to clarify before proceeding. Do not assume missing calls exist or fabricate payloads.
+If DataDog MCP tools are unavailable or return an error, tell the user which tool
+failed. Ask if they can provide request/response samples manually as a fallback.
+Do not proceed without evidence of actual API calls.
+
+**If no traces are found for any endpoint**, report this to the user — the partner
+may not have started testing yet, or the credentials may be wrong.
 
 ## Step 3: Fetch Documentation for Each Endpoint
 
-For every API call identified in Step 2, search the official Thanx documentation
+For every API endpoint found in Step 2, search the official Thanx documentation
 using `SearchThanx` (thanx-docs MCP).
 
 **This step is mandatory.** The documentation is the single source of truth for
@@ -112,7 +143,7 @@ For each endpoint, search for and record:
 | Versioning | Which API version the endpoint belongs to |
 
 **Max 15 `SearchThanx` queries** across this step. Batch related endpoints into
-single queries where possible (e.g., "purchases endpoint request body fields").
+single queries where possible.
 
 If the thanx-docs MCP server is unavailable, errors, or times out, stop and tell the
 user. Do not proceed with certification without documentation verification. The
@@ -124,8 +155,8 @@ from Keystone as needing verification.
 
 ## Step 4: Validate Each API Call
 
-For every API call from Step 2, compare against the documentation from Step 3.
-Run these checks:
+For every actual API call from DataDog (Step 2), compare against the documentation
+(Step 3). Run these checks:
 
 ### 4a: Authentication and Headers
 
@@ -141,7 +172,7 @@ Run these checks:
 
 | Check | What to Validate |
 |---|---|
-| URL path | Correct endpoint path, no typos, correct resource IDs |
+| URL path | Correct endpoint path, correct resource IDs |
 | HTTP method | Correct method (POST vs PUT vs PATCH) |
 | URL parameters | Required query params present, correct format |
 
@@ -161,10 +192,9 @@ Run these checks:
 
 | Check | What to Validate |
 |---|---|
-| Success handling | Partner processes 2xx responses correctly |
-| Error handling | Partner handles 4xx/5xx responses appropriately |
-| Required fields read | Partner reads the correct response fields |
-| Idempotency | Handles duplicate requests gracefully if applicable |
+| Error rate | What percentage of requests return 4xx/5xx |
+| Common errors | Recurring error patterns (same error repeated) |
+| Retry behavior | Are they retrying failed requests appropriately |
 
 ### 4e: Integration-Type-Specific Checks
 
@@ -173,13 +203,13 @@ Based on the integration type from Step 1, apply additional checks:
 | Integration Type | Additional Checks |
 |---|---|
 | Loyalty API Direct | No orders expected (only purchases). Refund clawback does NOT happen automatically. |
-| POS / Kiosk | Provider ticket lifecycle (checkout → billed). Payment amount calculation. |
+| POS / Kiosk | Provider ticket lifecycle (checkout then billed). Payment amount calculation. |
 | Consumer UX | Auth flow for end users. Reward exchange flow. Bonus points activation delay (~20 min). |
 | Native Ordering | Order creation flow. Menu sync if applicable. |
 
 ### 4f: Call Sequencing
 
-Verify the partner's API calls happen in the correct order:
+Verify the API calls in DataDog follow the correct order:
 
 - Authentication before any data calls
 - User lookup/creation before purchases
@@ -189,10 +219,10 @@ Verify the partner's API calls happen in the correct order:
 For each check, assign a result:
 
 - **PASS** — Matches documentation
-- **FAIL** — Does not match documentation (include expected vs actual)
+- **FAIL** — Does not match documentation (include expected vs actual from DataDog)
 - **WARNING** — Not wrong but could cause issues (e.g., deprecated field, missing
-  optional but recommended field)
-- **INSUFFICIENT DATA** — Partner did not provide enough detail to validate
+  optional but recommended field, high error rate)
+- **INSUFFICIENT DATA** — DataDog trace did not contain enough detail to validate
 
 ## Step 5: Generate Certification Report
 
@@ -205,15 +235,17 @@ Partner:        [name]
 Integration:    [type]
 Date:           [today's date]
 Mode:           [first certification / re-certification]
+DataDog range:  [date range searched]
+Calls analyzed: [N total API calls from DataDog]
 ────────────────────
 
 SUMMARY
 ───────
 Total checks:   [N]
-Passed:         [N] ✓
-Failed:         [N] ✗
-Warnings:       [N] ⚠
-Insufficient:   [N] ?
+Passed:         [N]
+Failed:         [N]
+Warnings:       [N]
+Insufficient:   [N]
 
 OVERALL RESULT: [CERTIFIED / NOT CERTIFIED / INCOMPLETE]
 ────────────────────
@@ -222,16 +254,16 @@ DETAILED RESULTS
 ────────────────
 
 1. Authentication and Headers
-   [✓/✗/⚠/?] Auth type: [result]
-   [✓/✗/⚠/?] Accept-Version: [result]
-   [✓/✗/⚠/?] Content-Type: [result]
+   [PASS/FAIL/WARNING/?] Auth type: [result]
+   [PASS/FAIL/WARNING/?] Accept-Version: [result]
+   [PASS/FAIL/WARNING/?] Content-Type: [result]
    ...
 
 2. Endpoint: [METHOD] [path]
-   [✓/✗/⚠/?] URL path: [result]
-   [✓/✗/⚠/?] Required fields: [result]
-   [✓/✗/⚠/?] Field mapping: [result]
-   [✓/✗/⚠/?] Points accrual: [result]
+   DataDog trace: [timestamp of example call]
+   [PASS/FAIL/WARNING/?] Required fields: [result]
+   [PASS/FAIL/WARNING/?] Field mapping: [result]
+   [PASS/FAIL/WARNING/?] Points accrual: [result]
    ...
    Documentation reference: [doc page or section from SearchThanx]
 
@@ -242,14 +274,14 @@ DETAILED RESULTS
 
 FAILURES — REMEDIATION REQUIRED
 ────────────────────────────────
-[For each FAIL, list:]
+[For each FAIL:]
 
 F1: [check name]
-    Endpoint:  [METHOD] [path]
-    Expected:  [what the docs say]
-    Actual:    [what the partner sent]
-    Fix:       [specific remediation — field name, value, format]
-    Doc ref:   [documentation reference]
+    Endpoint:     [METHOD] [path]
+    DataDog found: [what the partner actually sent]
+    Docs expect:   [what the documentation says]
+    Fix:           [specific remediation — field name, value, format]
+    Doc ref:       [documentation reference]
 
 F2: ...
 
@@ -266,20 +298,22 @@ W1: [description]
 
 MISSING EVIDENCE
 ────────────────
-[For each INSUFFICIENT DATA:]
+[For each INSUFFICIENT DATA or endpoint not found in DataDog:]
 
-M1: [what was not provided]
-    Needed:    [what we need to validate this check]
+M1: [what could not be validated]
+    Needed: [what we need — partner to make test calls, or provide samples]
 ```
 
 ## Step 6: Draft Communication
 
 Based on the certification result, draft the appropriate communication.
 
-**Internal details guardrail:** Never include Keystone code search results, internal
-repo paths, or system architecture details in the partner-facing email.
+**Internal details guardrail:** Never include DataDog trace IDs, internal service
+names, Keystone code search results, internal repo paths, or system architecture
+details in the partner-facing email. Reference only what the partner sent and what
+the docs expect.
 
-### CERTIFIED → Confirmation Email
+### CERTIFIED — Confirmation Email
 
 ```text
 DRAFT CERTIFICATION EMAIL
@@ -294,7 +328,7 @@ Subject: [Partner Name] — Integration Certified
 Next step: To send via Front, use /ds:draft-email with the conversation ID.
 ```
 
-### NOT CERTIFIED → Failure Email with Remediation
+### NOT CERTIFIED — Failure Email with Remediation
 
 ```text
 DRAFT REMEDIATION EMAIL
@@ -305,7 +339,7 @@ Subject: [Partner Name] — Certification Results: Action Required
 
 [For each failure:]
 Issue [N]: [clear description]
-- What we found: [actual behavior/payload]
+- What we found: [actual behavior — described without exposing DataDog internals]
 - What is expected: [per documentation]
 - How to fix: [specific steps — endpoint, field, value]
 
@@ -317,16 +351,16 @@ Boundary Doctrine: applied (specific remediation, no scope creep)
 Next step: To send via Front, use /ds:draft-email with the conversation ID.
 ```
 
-### INCOMPLETE → Missing Evidence Request
+### INCOMPLETE — Missing Evidence Request
 
 ```text
 DRAFT EVIDENCE REQUEST
 ──────────────────────
-Subject: [Partner Name] — Additional Information Needed for Certification
+Subject: [Partner Name] — Additional Testing Needed for Certification
 
 [List what was validated and passed so far]
-[List what could not be validated and why]
-[Specific request for the missing evidence — exact format needed]
+[List endpoints with no DataDog traces — partner needs to make test calls]
+[Request specific test scenarios to complete validation]
 
 ──────────────────────
 ```
@@ -357,16 +391,16 @@ and which still need work.
    knowledge, or Keystone code alone.
 2. **If thanx-docs MCP is unavailable, stop.** Do not proceed with certification
    without documentation verification. Tell the user and suggest retrying later.
-3. **Max 15 SearchThanx queries + 5 Keystone queries** in Step 3. Batch related
+3. **DataDog is required for evidence.** Use `datadog_spans` and `datadog_logs` to
+   find the partner's actual API calls. If DataDog MCP tools are unavailable, ask
+   the user to provide request/response samples as a manual fallback.
+4. **Max 15 SearchThanx queries + 5 Keystone queries** in Step 3. Batch related
    endpoints to stay within budget.
-4. **Keystone answers on undocumented behavior need verification.** If a field or
-   behavior is not in the docs but found in code, flag it as needing Darren
-   verification before including in the certification result.
-5. **Redact all credentials.** Never include API keys, bearer tokens, or secrets
-   in any output — report, email, or tracking update.
-6. **Never include internal details in partner-facing output.** Keystone code
-   results, internal repo paths, and system architecture belong only in the
-   certification report, not in the partner email.
+5. **Keystone answers on undocumented behavior need verification.** Flag as needing
+   Darren verification before including in the certification result.
+6. **Redact all credentials and internal details.** Never include API keys, bearer
+   tokens, DataDog trace IDs, internal service names, or system architecture in
+   partner-facing output.
 7. **Apply boundary doctrine on every communication.** Provide specific remediation
    steps but do not extend scope beyond what was submitted for certification.
 8. **Knowledge base files are optional.** If `partners/[name].md`, `knowledge/*.md`,
