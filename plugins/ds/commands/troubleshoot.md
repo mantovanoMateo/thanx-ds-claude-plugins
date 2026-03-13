@@ -189,13 +189,16 @@ root cause:
 | Partner Implementation Error | Partner's code is wrong | HIGH |
 | Platform Bug | Thanx system is broken | MEDIUM (needs eng confirmation) |
 | Undocumented Behavior | Works as designed but not in docs | MEDIUM (needs verification) |
-| Configuration Issue | Merchant or integration misconfigured | MEDIUM (Keystone only) / HIGH (data confirmed) |
+| Configuration Issue | Merchant or integration misconfigured | MEDIUM (Keystone only) / HIGH (requires user to confirm via Metabase/Sherlock) |
 | Expected Behavior | Partner misunderstands the platform | HIGH (if docs confirm) |
 
 Assign overall confidence:
 
 - **HIGH** — Matched known knowledge entry, or confirmed by documentation + code,
-  or configuration issue confirmed by direct data (Metabase, Sherlock)
+  or configuration issue confirmed by direct data query. Note: Metabase and
+  Sherlock are not accessible via MCP — if data confirmation would elevate
+  confidence from MEDIUM to HIGH, ask the user to verify in Metabase/Sherlock
+  and pause until they confirm.
 - **MEDIUM** — Strong evidence but not verified by engineering, or Keystone answer
   on undocumented behavior, or configuration issue from Keystone evidence only
 - **LOW** — Insufficient evidence, needs engineering input
