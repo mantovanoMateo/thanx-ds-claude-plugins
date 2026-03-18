@@ -679,3 +679,7 @@ and which still need work.
     or other Second Brain files do not exist, skip them silently and continue.
 14. **Do not send any email, update any ticket, or post to Slack.** Present
     everything for human review and approval.
+13. **Required headers missing = FAIL, not WARNING.** If the docs list a header as
+    required (Content-Type, Accept-Version, Authorization, X-ClientId, User-Agent)
+    and it is absent from the request, mark it FAIL regardless of whether the API
+    accepted the request. The API being lenient does not make the header optional.
