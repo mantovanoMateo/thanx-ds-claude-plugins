@@ -6,26 +6,62 @@ description: Validate a partner integration against Thanx API documentation usin
 
 Validate a partner's API integration by pulling their actual API calls from DataDog
 sandbox and checking each one against the official Thanx documentation. The user
-provides the partner's merchant handle and the endpoints under review. The command
-uses DataDog spans to discover calls and filter by merchant, then DataDog logs to
-get the full request params for validation against thanx-docs MCP. Generates a
-certification report with PASS/FAIL per check and remediation steps.
+provides the partner context, credentials or merchant handle, and the endpoints
+under review. The command finds real requests in DataDog, verifies headers, payloads,
+and field mappings against thanx-docs MCP, and generates a certification report with
+PASS/FAIL per check and remediation steps.
+
+## How This Command Works
+
+There are three ways to invoke this command:
+
+1. **No arguments** (`/ds:certify`) — Prints a ready-to-fill intake template with
+   all fields explained. Fill it in and re-run.
+2. **Partial arguments** — Shows a checklist of what's present vs missing. Fill in
+   the gaps and re-run.
+3. **Complete intake** — Proceeds through the full certification pipeline:
+   gather context → pull DataDog calls → fetch docs → validate → report → draft email.
+
+### Integration Types and DataDog Strategy
+
+The integration type determines how we find the partner's calls in DataDog:
+
+| Integration Type | DataDog Search Strategy | Required Credentials |
+|---|---|---|
+| **Partner API** (subscriber ingestion, campaign/reward issuance) | Search **logs** by bearer token or client ID in request headers | Access Token + Client ID |
+| **POS / Kiosk** (basket lifecycle, provider tickets) | Search **spans** by `@merchant.handle`, then **logs** for params | Merchant Handle |
+| **Consumer UX / Custom App** (SSO, rewards, loyalty) | Search **logs** by bearer token or client ID | Access Token + Client ID |
+| **Native Ordering** (Olo, menu sync) | Search **spans** by `@merchant.handle` | Merchant Handle |
 
 ## Usage
 
 ```bash
-/ds:certify <partner> <merchant_handle> <endpoints>
+/ds:certify <structured_intake>
 ```
 
-**Required:**
-- `partner` — Partner name or Front/Jira URL with certification context
-- `merchant_handle` — The merchant handle in DataDog (e.g., `skytabpone`). This is
-  the resolved merchant identity used by Thanx internally — NOT the raw Merchant-Key
-  or API key. DataDog stores the resolved handle in `@merchant.handle`, not the raw
-  credential. If the user provides a raw Merchant-Key instead, tell them you need the
-  merchant handle and explain why.
-- `endpoints` — List of API endpoints the partner uses (e.g., `/api/baskets`,
-  `/api/account`)
+### Structured Intake Format
+
+```text
+Partner:          [name — or Front/Jira URL for context]
+Integration type: [Subscriber Ingestion / POS-Kiosk / Loyalty API / Consumer UX / Native Ordering / Campaign-Reward Issuance]
+Merchant:         [merchant handle for POS/Ordering, or merchant_id for Partner API]
+Endpoints:        [comma-separated list, e.g. POST /partner/subscribers]
+Access Token:     [bearer token — for Partner API / Consumer UX integrations]
+Client ID:        [X-ClientId value — for Partner API / Consumer UX integrations]
+Front thread:     [optional — DEV-XXXX or cnv_* for conversation context]
+```
+
+**Which credentials do I need?**
+- **Partner API / Consumer UX**: Access Token + Client ID (these appear in DataDog
+  log headers as `Authorization: Bearer {token}` and `X-Clientid: {id}`)
+- **POS / Kiosk / Native Ordering**: Merchant Handle (DataDog spans store the
+  resolved handle in `@merchant.handle`, not raw API keys)
+- **Not sure?** Provide whatever you have — the command will tell you if it needs
+  something different.
+
+**Session history note:** Credentials passed as inline arguments may be visible
+in Claude session history, terminal scrollback, or screen recordings. For sensitive
+credentials, consider providing them via a file reference (e.g., `cat .context/creds.txt`).
 
 **Optional (inline flags):**
 - `--type <integration_type>` — Override integration type detection
@@ -38,9 +74,84 @@ certification report with PASS/FAIL per check and remediation steps.
 
 You are executing the `/ds:certify` command.
 
-## Step 1: Gather Partner Context
+## Step 0: Validate Intake
 
 Arguments: $ARGUMENTS
+
+### If no arguments provided:
+
+Print the intake template and stop:
+
+```text
+CERTIFICATION INTAKE
+════════════════════
+To run a certification, provide the following information:
+
+Partner:          [partner name or Front/Jira URL]
+Integration type: [one of the types below]
+Merchant:         [merchant handle or merchant_id — see below]
+Endpoints:        [comma-separated API endpoints to certify]
+Access Token:     [bearer token — Partner API / Consumer UX only]
+Client ID:        [X-ClientId — Partner API / Consumer UX only]
+Front thread:     [optional — DEV-XXXX or cnv_* ID]
+
+INTEGRATION TYPES
+─────────────────
+- Subscriber Ingestion    → POST /partner/subscribers
+- POS-Kiosk               → basket lifecycle (checkout/billed/completed)
+- Loyalty API             → purchases, rewards, user auth
+- Consumer UX             → SSO, reward exchange, card linkage
+- Native Ordering         → order creation, menu sync
+- Campaign-Reward Issuance → campaign creation, reward issuance jobs
+
+WHICH CREDENTIALS?
+──────────────────
+Partner API / Consumer UX:  Access Token + Client ID
+  → Found in DataDog logs as Authorization + X-Clientid headers
+POS / Kiosk / Ordering:     Merchant Handle
+  → Found in DataDog spans as @merchant.handle
+
+EXAMPLE
+───────
+/ds:certify
+Partner:          Altos Agency (Kelly's Roast Beef)
+Integration type: Subscriber Ingestion
+Merchant:         wqv1y7qrh9jd0e6
+Endpoints:        POST /partner/subscribers
+Access Token:     [token from partner credentials]
+Client ID:        [client_id from partner credentials]
+Front thread:     DEV-9095
+```
+
+Do NOT proceed with certification. Wait for the user to provide the intake.
+
+### If partial arguments provided:
+
+Parse what was given and show a checklist:
+
+```text
+INTAKE CHECKLIST
+────────────────
+[✓] Partner:          [parsed value]
+[✓] Integration type: [parsed or inferred value]
+[ ] Merchant:         [missing — needed for DataDog filtering]
+[✓] Endpoints:        [parsed value]
+[ ] Access Token:     [missing — needed for Partner API log search]
+[ ] Client ID:        [missing — needed for Partner API log search]
+
+Please provide the missing fields to proceed.
+```
+
+Do NOT proceed with certification until all required fields for the integration
+type are present.
+
+### If complete intake provided:
+
+Proceed to Step 1.
+
+## Step 1: Gather Partner Context
+
+Arguments: $ARGUMENTS (validated in Step 0)
 
 Determine the partner and collect integration context:
 
@@ -84,19 +195,48 @@ If integration type is unknown, stop and ask the user before proceeding.
 
 ## Step 2: Pull Actual API Calls from DataDog
 
-DataDog stores two complementary data sources. Both are needed for full validation:
+The search strategy depends on the integration type identified in Step 0/1.
 
-- **Spans** — contain merchant handle, HTTP status code, API version (from
-  `resource_name`, e.g., `Api::V1::Baskets`), user-agent, and timestamps. Used for
-  **discovery and filtering** by merchant.
-- **Logs** — contain the full `params` object (all request body fields, values,
-  nested objects) plus status code and timestamps. Used for **payload validation**.
-- **Neither source stores raw request headers** (Merchant-Key, Accept-Version,
-  Content-Type). Headers are inferred — see Step 4a.
+### Strategy A: Partner API / Consumer UX (search by credentials)
 
-### 2a: Query Spans (Discovery)
+For integrations using Partner API credentials (bearer token + client ID), search
+**logs directly** — they contain full request headers including `Authorization` and
+`X-Clientid`, plus `params`, `status`, and `path`.
 
-Use `datadog_spans` to find the partner's API calls:
+```
+datadog_logs(
+  query: "env:sandbox service:thanx-api @data.path:*[endpoint]*",
+  from: "now-[days]d",
+  to: "now",
+  limit: 10
+)
+```
+
+From each log, capture:
+- `headers.Authorization` — bearer token (use to confirm calls belong to partner)
+- `headers.X-Clientid` — client ID (second confirmation)
+- `headers.Accept-Version` — API version header
+- `headers.Content-Type` — **directly observable** (PASS/FAIL, not inferred)
+- `headers.User-Agent` — client SDK/tool
+- `method`, `path` — endpoint info
+- `status` — HTTP response code
+- `params` — full request body (all fields, values, nested objects)
+- `duration`, `db`, `view` — performance data
+- `datetime` — timestamp
+
+**Filtering:** Match logs to the partner by checking `headers.Authorization` contains
+the partner's bearer token, OR `headers.X-Clientid` matches the partner's client ID.
+Exclude logs from other partners sharing the same endpoint.
+
+**Limit: 10 logs per endpoint.** Mix of successful and error responses.
+
+### Strategy B: POS / Kiosk / Native Ordering (search by merchant handle)
+
+For integrations using merchant-level auth (Merchant-Key header), DataDog resolves
+the key server-side and stores the handle in spans. Use **spans for discovery, then
+logs for payload detail**.
+
+#### 2b-i: Query Spans (Discovery)
 
 ```
 datadog_spans(
@@ -118,9 +258,7 @@ From each span, capture:
 
 **Limit: 10 spans per endpoint.** Mix of successful and error responses.
 
-### 2b: Query Logs (Payload Detail)
-
-Use `datadog_logs` to get the full request params:
+#### 2b-ii: Query Logs (Payload Detail)
 
 ```
 datadog_logs(
@@ -131,7 +269,7 @@ datadog_logs(
 )
 ```
 
-Logs contain a JSON `message` field with:
+Logs contain:
 - `method`, `path` — endpoint info
 - `status` — HTTP response code
 - `params` — **full request body** including all fields, values, nested objects
@@ -139,13 +277,16 @@ Logs contain a JSON `message` field with:
 - `duration`, `db`, `view` — performance data
 - `datetime` — timestamp
 
-**Important:** Logs cannot be filtered by merchant handle. Use timestamps from the
-span results to narrow the time window and match logs to the correct merchant's
-calls. If multiple merchants are hitting the same endpoint in the same window,
-cross-reference the log `params` (e.g., basket ID patterns) with what you expect
-from the partner.
+**Important:** Logs for POS/kiosk integrations cannot be filtered by merchant handle.
+Use timestamps from the span results to narrow the time window and match logs to
+the correct merchant's calls. If multiple merchants hit the same endpoint in the
+same window, cross-reference log `params` (e.g., basket ID patterns) with what you
+expect from the partner.
 
-**Query budget: max 2 DataDog queries per endpoint** (1 span + 1 log).
+### Query Budget
+
+**Max 2 DataDog queries per endpoint** (Strategy A: 1 log query; Strategy B: 1 span
++ 1 log). **Hard cap: max 40 DataDog queries total.**
 
 ### 2c: Deduplication
 
@@ -223,7 +364,19 @@ from Step 3. Run these checks:
 
 ### 4a: Authentication and Headers
 
-DataDog does not store raw request headers. Use inference rules:
+Header validation depends on which DataDog strategy was used in Step 2.
+
+**Strategy A (Partner API / Consumer UX) — headers directly observable in logs:**
+
+| Check | How to Validate |
+|---|---|
+| Authorization | **Direct.** Check `headers.Authorization` contains `Bearer {token}`. PASS/FAIL. |
+| X-ClientId | **Direct.** Check `headers.X-Clientid` matches expected client ID. PASS/FAIL. |
+| Accept-Version | **Direct.** Check `headers.Accept-Version` is `v4.0`. PASS/FAIL. |
+| Content-Type | **Direct.** Check `headers.Content-Type` is `application/json`. If missing from headers, mark FAIL — even if JSON was parsed successfully, the header is required per docs. |
+| User-Agent | **Direct.** Check `headers.User-Agent` identifies the partner. PASS/WARNING if generic. |
+
+**Strategy B (POS / Kiosk / Ordering) — headers inferred from spans:**
 
 | Check | How to Validate |
 |---|---|
@@ -233,7 +386,7 @@ DataDog does not store raw request headers. Use inference rules:
 | Accept-Version | **Cannot be verified directly.** Infer from the API version in `resource_name`. Note as "inferred from server routing" in the report. |
 
 Mark inferred checks as `[PASS — inferred]` in the report so the reviewer knows
-these were not directly observed.
+these were not directly observed. Direct checks use plain `[PASS]` or `[FAIL]`.
 
 ### 4b: Endpoint and Method
 
@@ -495,14 +648,14 @@ and which still need work.
    against sandbox traces only. Never pull production traces for certification.
 5. **Max 20 SearchThanx queries + 5 Keystone queries** in Step 3. Max 2 DataDog
    queries per endpoint in Step 2. Limit results to 10 spans per endpoint.
-6. **Headers are inferred, not directly observed.** DataDog does not store raw
-   request headers. Auth is inferred from merchant handle resolution + non-401
-   status. API version is extracted from span `resource_name`. Content-Type is
-   inferred from successful param parsing. Mark all header checks as "inferred"
-   in the report.
-7. **Merchant handle is required, not raw API keys.** DataDog resolves Merchant-Key
-   to `merchant.handle` server-side. The raw key is not searchable. If the user
-   provides a raw key, ask for the merchant handle instead.
+6. **Header observability depends on integration type.** Partner API / Consumer UX
+   logs contain full request headers (Authorization, X-Clientid, Accept-Version,
+   Content-Type, User-Agent) — validate directly and mark as PASS/FAIL. POS / Kiosk
+   logs do NOT contain raw headers — infer from spans and mark as "inferred".
+7. **Credential requirements depend on integration type.** Partner API / Consumer UX
+   need bearer token + client ID (searchable in log headers). POS / Kiosk / Ordering
+   need merchant handle (searchable in span `@merchant.handle`). If the user provides
+   the wrong credential type for their integration, explain what's needed and why.
 8. **Keystone answers on undocumented behavior need engineering verification.** Flag
    as needing verification before including in the certification result. Never quote
    or paraphrase Keystone code in any output.
