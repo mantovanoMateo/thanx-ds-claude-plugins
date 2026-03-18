@@ -290,9 +290,15 @@ expect from the partner.
 
 ### 2c: Deduplication
 
-Before proceeding to validation, group the returned API calls by endpoint + request
-body structure. For each unique group, keep one representative call and note the
-count of matching calls. This prevents validating 200 identical requests.
+Before proceeding to validation, group the returned API calls by a composite key:
+**HTTP method + endpoint path + response status code + auth scheme + request body
+field structure** (set of top-level field names and nesting shape, not values).
+This ensures calls that differ in method, status, or auth are not merged — each
+representative must cover all dimensions that get validated in Step 4.
+
+For each unique group, keep one representative call and note the count of matching
+calls. This prevents validating 200 identical requests while preserving meaningful
+variants (e.g., a 201 vs a 400 for the same endpoint are separate groups).
 
 Organize into a numbered list:
 
