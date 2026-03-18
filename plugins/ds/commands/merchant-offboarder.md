@@ -577,6 +577,24 @@ rm -rf {repo_path}/android/app/src/{handle}StagingRelease
 
 Before deleting, list which directories exist. After deleting, confirm removal. Report what was deleted and what was not found.
 
+**Symlink cleanup:** Some variant directories (typically `SandboxRelease` and
+`StagingRelease`) are symlinks to other variant directories rather than real
+directories. When their targets are deleted first, these become dangling
+symlinks. The `rm -rf` commands above handle symlinks correctly, but as a
+safety net, always run an explicit check afterward:
+
+```bash
+find {repo_path}/android/app/src/ -maxdepth 1 -name "{handle}*" -type l
+```
+
+If any symlinks remain, delete them with `git rm`:
+
+```bash
+git rm {repo_path}/android/app/src/{symlink_name}
+```
+
+Report any symlinks found and removed.
+
 ### E2. Remove Product Flavor from build.gradle (automated)
 
 Read `{repo_path}/android/app/build.gradle` and find the merchant's product flavor entry inside the `productFlavors { }` block. The entry format varies:
