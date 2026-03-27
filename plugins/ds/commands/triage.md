@@ -58,6 +58,73 @@ Based on the extracted information, classify the ticket using the exact Front ta
 | Feature Request | New functionalities requested by customers |
 | General Issue | Configuration issues, platform usage questions, segment validations |
 
+## Step 2.5: Partner Lookup (Notion Integration Awareness)
+
+After classification, check if this partner has an existing Notion integration record and take the appropriate action.
+
+### 2.5a: Query Notion Integration Partners DB
+
+Search the Integration Partners Database for the partner name extracted in Step 1:
+
+- Use `notion-query-database` with database ID `16ca84ed40248041bf3dd44210a7b002`
+- Filter by partner/merchant name (use a contains filter on the Name property)
+- If multiple results match, pick the closest match by name
+
+### 2.5b: Existing Partner — Update Status Log
+
+If a matching Notion integration record is found, update it regardless of ticket type.
+Bug tickets, credential requests, and other non-integration tags still warrant a
+status log entry — it keeps the partner's timeline complete.
+
+1. Read the existing page content to locate the Status Log section
+2. Prepare a new status log entry:
+
+```text
+**[YYYY-MM-DD]** — New support ticket triaged ([Front tag classification]).
+Ticket: [DEV-XXXX or ISS-XXXX](Front conversation link).
+Summary: [1-sentence issue summary from Step 1].
+```
+
+1. **Present the proposed status log update to the user for confirmation before writing.**
+1. On approval: append the entry to the Status Log toggle section using `notion-update-page`
+1. Note the Notion record link in the triage summary (Step 9)
+
+### 2.5c: New Partner — Suggest Record Creation
+
+If no matching Notion integration record is found AND the Front tag is one of:
+
+- API Support
+- Third-Party Integration
+- Certification Process
+
+Then:
+
+1. Flag this in the triage output:
+
+```text
+⚠ No Notion integration record found for [partner name].
+This ticket is integration-related ([Front tag]) — consider creating a record.
+→ Run: /ds:integration-record [partner name]
+```
+
+1. Do NOT create the record automatically — suggest the command and let the user decide.
+
+If the Front tag is NOT integration-related (Bug, Credentials, Feature Request, General Issue), skip this step silently.
+
+### 2.5d: Update Local Partner File
+
+If `partners/[name].md` exists in the Second Brain repository:
+
+1. Read the current file content
+2. Update the latest ticket status section with:
+   - Ticket reference (DEV-XXXX or ISS-XXXX)
+   - Classification (Front tag)
+   - Date triaged
+   - 1-sentence summary
+3. **Present the proposed local file update to the user for confirmation before writing.**
+
+If no local partner file exists, skip this step silently.
+
 ## Step 3: Apply Routing Rules
 
 Determine whether Dev Support handles this or it needs escalation, following the Developer Support Routing Guide:
@@ -196,6 +263,10 @@ Front Tag: {API Support | Third-Party Integration | Bug | Certification Process 
 Routing: {DS handles | Escalate to Eng | Redirect to process}
 Integration: {integration if applicable}
 
+Notion Integration Record: {Found — [link] | Not found | N/A}
+Status Log Updated: {Yes (pending confirmation) | Skipped — no record}
+Local Partner File: {Updated (pending confirmation) | Not found | N/A}
+
 Known Issues Found: {count}
 {list of links if any}
 
@@ -207,7 +278,9 @@ Draft Response:
 Suggested Actions:
 - [ ] {action 1 - e.g., "Assign ticket in Front"}
 - [ ] {action 2 - e.g., "React with eyes emoji in #developer-support-tickets"}
-- [ ] {action 3 - e.g., "Tag merchant in Front thread"}
+- [ ] {action 3 - e.g., "Approve Notion status log update" — if applicable}
+- [ ] {action 4 - e.g., "Approve local partner file update" — if applicable}
+- [ ] {action 5 - e.g., "Run /ds:integration-record [partner]" — if new integration partner}
 ```
 
 Do not send any message, update any ticket, or post to Slack. Present everything for human review and approval.
