@@ -1,6 +1,6 @@
 {
   "name": "ds",
-"version": "0.10.0",
+"version": "0.11.0",
   "description": "Dev Support workflows for partner ticket triage, API support, certification, credential provisioning, integration troubleshooting, and platform knowledge research.",
   "author": {
     "name": "Dev Support Team",
@@ -13,6 +13,7 @@
     "troubleshooting",
     "triage",
     "front",
+    "follow-up",
     "credentials",
     "onboarding",
     "sandbox",
