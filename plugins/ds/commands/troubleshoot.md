@@ -117,8 +117,9 @@ Search the Second Brain knowledge base for a matching known issue. Check in orde
 3. **`knowledge/platform-patterns.md`** — If it exists, read the file. Check for
    recurring patterns that match the symptoms.
 
-If none of these files exist (e.g., running outside the Second Brain workspace),
-skip this step entirely and proceed to Step 4.
+**Note:** These knowledge files live in the Second Brain repository, not in the
+plugin repo. When running outside the Second Brain workspace (the common case),
+this step is skipped automatically and the command proceeds to Step 4 (MCP research).
 
 If a match is found, display:
 
