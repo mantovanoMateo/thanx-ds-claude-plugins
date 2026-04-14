@@ -28,6 +28,9 @@ Calculate the report window based on today's date:
   (e.g., if today is March 26, cutoff is March 19)
 - **Kicked-off cutoff**: Same as change detection cutoff — only show
   integrations kicked off within the last 7 days
+- **Recently certified window**: 30 calendar days before today —
+  integrations certified within this window appear in the
+  "Recently Certified" section
 
 Announce:
 
@@ -47,88 +50,169 @@ Pull all integration records from the Notion Integration Partners Database.
    Save to a file and extract the properties listed below.
 1. For each record, extract:
    - **Name** (title property)
-   - **Integration Status** (select property)
+   - **Integration Status** (status property)
    - **Integration Health** (select — emoji values: 🟢, 🟡, 🔴)
    - **Integration Type** (multi_select property)
-   - **Owner** (select — Partner, Merchant, or Thanx)
+   - **Built By** (select — Platform Partner, Merchant-Specific, or Thanx)
    - **Kick-Off** (date property)
+   - **Target Date** (date property)
+   - **Certification Date** (date property)
    - **last_edited_time** (page metadata)
    - **url** (page URL for linking)
-1. **Filter out terminal statuses.** Exclude records where
-   Integration Status is "Complete", "Archived", or "Cancelled".
-   Only active integrations should appear in the report.
 
 If `notion_query_database` is unavailable, report this and stop —
 the report cannot be generated without the source data.
 
-## Step 3: Classify Integrations
+## Step 3: Gather Weekly Change Summaries
+
+For each active integration (non-terminal status), generate a
+one-sentence summary of what changed this week. This is a key
+deliverable — stakeholders want to see progress at a glance
+without clicking into individual records.
+
+### How to determine what changed
+
+For each integration, check these sources in order:
+
+1. **Front threads (primary)**: Run the Front ticket script to list
+   recent activity across all assigned threads. Match partner names
+   to active integrations. If a Front thread for this partner was
+   updated in the last 7 days, summarize the latest exchange.
+
+   ```bash
+   python3 scripts/front-tickets.py
+   ```
+
+   This returns all open, waiting, and recently resolved tickets.
+   Match each ticket's contact or subject to active integrations.
+   For matched threads, read messages with:
+   `python3 scripts/front-tickets.py --messages <CNV_ID>`
+2. **Status Log**: Use `notion_get_page_content` to read the most
+   recent Status Log entry on the partner's Notion page. If the
+   latest entry is dated within the last 7 days, summarize it.
+3. **`last_edited_time`**: If the page was edited in the last 7
+   days but no Front activity or Status Log entry exists, note
+   "Record updated" with the edit date.
+4. **No change**: If none of the above sources show recent activity,
+   write "No change this week."
+
+### Writing the summary
+
+- One sentence max, ~10-15 words
+- Lead with the action or state change
+- Use plain language, not jargon
+- Examples:
+  - "Moved to Under Certification after sandbox testing completed"
+  - "Waiting on partner to submit updated API headers"
+  - "Certification meeting scheduled for April 15"
+  - "Sandbox credentials provided, partner building integration"
+  - "No change this week"
+  - "Kicked off March 27 — initial scope call completed"
+
+### Performance note
+
+Reading Status Logs for every integration can be slow. To manage
+this:
+- Prioritize integrations with `last_edited_time` in the last 7
+  days — these are most likely to have meaningful updates
+- **Caveat:** `last_edited_time` can reflect bulk property updates
+  (e.g., health re-evaluations) rather than meaningful content
+  changes. Always cross-reference with Front threads before
+  defaulting to "Record updated."
+- For integrations with no recent edits, skip the Status Log read
+  and default to "No change this week"
+- Run page content reads in parallel where possible
+
+## Step 4: Classify Integrations
 
 Using the extracted data, classify each integration into the
-following categories:
+following sections. The report should only show integrations that
+are **actively in progress or recently completed** — not every
+integration ever tracked.
 
-### New This Week
+### Filtering Rules
 
-Integrations where `Kick-Off` date falls within the last 7 days
-(on or after the cutoff date).
+**Include in the report:**
+- Integration Status IN: Not started, Kicked-Off, In progress,
+  Under Certification, Partial Certification
+- Integration Status = Done AND Certification Date within the
+  last 30 days (recently certified)
+- Integration Status = Paused (visibility for stalled work)
 
-### Changes This Week
+**Exclude from the report:**
+- Integration Status = Done with Certification Date older than
+  30 days (long-certified — no longer needs weekly tracking)
+- Integration Status = Done with no Certification Date AND
+  Kick-Off older than 90 days (likely long-certified, date missing)
+- Integration Status IN: Declined, Complete, Archived, Cancelled
 
-Integrations where `last_edited_time` falls within the last 7 days.
-For each, determine what changed:
+### Section: Active Integrations
 
-- If kicked off this week: label as "New — kicked off [date]"
-- If Integration Status or Integration Health changed (check
-  the page's status log for prior values — Notion queries only return current state): describe the transition
-  (e.g., "Health 🟢 → 🟡")
-- Otherwise: label as "Record updated" with the edit date
+All integrations with status IN: Not started, Kicked-Off,
+In progress, Under Certification, Partial Certification.
 
-**Note:** `last_edited_time` updates on any property change, including
-minor edits. When Integration Status transitions become consistently
-populated, prefer those over raw edit timestamps for more precise
-change detection.
+Sort by status priority:
+1. Under Certification (closest to completion)
+2. In progress
+3. Partial Certification
+4. Kicked-Off
+5. Not started
 
-### Lower Activity
+Each table row shows: Partner (linked), Type, Status, Health,
+Target Date (or —), **This Week** (one-sentence summary from
+Step 3).
 
-Integrations with Integration Health = 🟡. These are integrations
-with less movement or no recent communications — NOT an escalation
-signal, just a visibility flag.
+### Section: Recently Certified (Last 30 Days)
+
+Integrations with status = Done AND Certification Date within the
+last 30 days.
+
+Each table row shows: Partner (linked), Type, Certified date.
+
+### Section: Paused / Stalled
+
+Integrations with status = Paused.
+
+Each table row shows: Partner (linked), Type, Health,
+**This Week** (one-sentence summary — often "No change" for paused
+integrations, but check in case there's a reactivation signal).
+
+### Section: Lower Activity (🟡)
+
+Integrations with Integration Health = 🟡 that are NOT paused
+(paused integrations already appear in their own section).
 
 **Important:** Do NOT label this section "At Risk", "Critical", or
 any alarming language. 🟡 simply means lower activity.
 
-### Paused / No Movement (🔴)
+## Step 5: Build Report Summary
 
-Do NOT create a separate section for 🔴 integrations. These are
-known paused integrations. They appear in the "All Active
-Integrations" section with their health emoji but do not get called
-out separately.
+The summary section includes exactly four bullet points:
 
-### All Active Integrations
+- **X** active integrations (in progress, under certification,
+  kicked-off, etc.)
+- **X** recently certified (last 30 days)
+- **X** paused / stalled
+- **X** with lower activity (🟡)
 
-Group all integrations by Integration Type:
+If any count is zero, omit that bullet.
 
-- POS
-- Ordering
-- Marketing
-- Custom App
-- Kiosk
-- Payments
-- Data
-- Other (Gamification, Segmentation, Merchant UX, etc.)
+## Step 6: Data Quality Checks
 
-Each table shows: Partner (linked), Health, Owner, Kick-Off date.
+Before creating the report, scan for data anomalies:
 
-## Step 4: Build Report Summary
+1. **Future certification dates**: Status = Done but Certification
+   Date is in the future — likely a data entry error
+2. **Missing Target Dates**: Count how many active integrations
+   (non-Done, non-Paused, non-Declined) have no Target Date
+3. **Missing Kick-Off dates**: Any integration with a non-terminal
+   status but no Kick-Off date
+4. **Stale statuses**: Integrations with status = Kicked-Off but
+   Kick-Off date older than 90 days (may have progressed)
 
-The summary section includes exactly three bullet points:
+Include findings in the data quality notes (Step 10).
 
-- **X** integration(s) kicked off this week
-- **X** integrations with lower activity (🟡)
-- **X** integrations with recent movement
-
-Do NOT include total integration count.
-
-## Step 5: Check for Existing Report (Current Week)
+## Step 7: Check for Existing Report (Current Week)
 
 Before creating a new report, check for duplicates:
 
@@ -139,9 +223,9 @@ Before creating a new report, check for duplicates:
    "Week of [Monday date]".
 1. If a matching page exists, warn the user and ask for confirmation
    before creating a duplicate.
-1. If no match exists, proceed to Step 6.
+1. If no match exists, proceed to Step 8.
 
-## Step 6: Create Notion Report Page
+## Step 8: Create Notion Report Page
 
 Create a new page in the Weekly Integration Status Tracker database.
 
@@ -161,38 +245,44 @@ Create a new page in the Weekly Integration Status Tracker database.
 
 ```markdown
 ## Summary
-- **X** integration(s) kicked off this week
-- **X** integrations with lower activity (🟡)
-- **X** integrations with recent movement
+- **X** active integrations
+- **X** recently certified (last 30 days)
+- **X** paused / stalled
+- **X** with lower activity (🟡)
 
 ---
 
-## 📈 Changes This Week
-Integrations with activity since [cutoff date].
+## 📊 Active Integrations
+Integrations currently in progress, under certification, or kicked off.
 
-| Partner | Type | Health | What Changed |
+| Partner | Type | Status | Health | Target Date | This Week |
+|---|---|---|---|---|---|
+| [Name](url) | Type | Status | emoji | date or — | one-sentence summary |
+
+---
+
+## ✅ Recently Certified (Last 30 Days)
+
+| Partner | Type | Certified |
+|---|---|---|
+| [Name](url) | Type | date |
+
+---
+
+## ⏸️ Paused / Stalled
+
+| Partner | Type | Health | This Week |
 |---|---|---|---|
-| [Name](url) | Type | emoji | Description |
+| [Name](url) | Type | emoji | one-sentence summary |
 
 ---
 
 ## 🟡 Lower Activity
 Integrations with less movement or no recent communications.
 
-| Partner | Type | Owner | Kick-Off |
-|---|---|---|---|
-| [Name](url) | Type | Owner | date or — |
-
----
-
-## 📊 All Active Integrations
-
-### [Type]
-| Partner | Health | Owner | Kick-Off |
-|---|---|---|---|
-| [Name](url) | emoji | Owner | date or — |
-
-[Repeat for each type that has integrations]
+| Partner | Type | Status | Health | Target Date | This Week |
+|---|---|---|---|---|---|
+| [Name](url) | Type | Status | emoji | date or — | one-sentence summary |
 
 ---
 
@@ -202,39 +292,43 @@ Integrations with less movement or no recent communications.
 1. If `notion-create-pages` is unavailable, present the report content
    in a code block for manual copy-paste and note the failure.
 
-## Step 7: Draft Slack Notification
+## Step 9: Draft Slack Notification
 
 Draft a Slack message for the partnerships dev support channel.
-Do NOT send it.
+Do NOT send it. Use Slack embedded link format: `<url|display text>`.
 
 ```text
-Hi team! The weekly integration status report has been uploaded to Notion:
-[Notion page URL from Step 6]
+Hi team! The weekly integration status report has been uploaded:
+<[Notion page URL]|📋 Weekly Integration Report — Week of [date]>
 
 Highlights:
-• X new integration(s) kicked off ([names])
-• X integrations with lower activity ([names])
-• X integrations with recent movement
+• X active integrations ([names closest to completion])
+• X recently certified ([names])
+• X paused / stalled
 
-Full details with links to each integration record are in the report.
+Browse all integrations anytime: <https://www.notion.so/thanxwiki/16ca84ed40248041bf3dd44210a7b002?v=334a84ed4024817cb076000c2d6b6d25|Integrations Dashboard>
 Let us know if you have any questions!
 ```
 
-If no integrations were kicked off this week, omit that bullet.
-Adjust the other bullets similarly if counts are zero.
+If any count is zero, omit that bullet.
+Adjust the highlight names to focus on what's most relevant this week.
 
-## Step 8: Present for Review
+## Step 10: Present for Review
 
 Present the following to the user:
 
 1. **Notion page link** — the URL of the created report page
 1. **Slack draft** — the message to post, inside a code block
    for easy copy-paste
-1. **Data quality notes** — flag any issues found:
-   - Integration Status empty for records (common — this field is
-     not consistently populated yet)
+1. **Data quality notes** — flag any issues found in Step 6:
+   - Future certification dates on Done integrations
+   - Missing Target Dates (count and list)
    - Missing Kick-Off dates
-   - Missing Health values
+   - Stale statuses (Kicked-Off but old)
+1. **Status Log updates** — for any integration where Front thread
+   activity was found but the Notion Status Log is stale, present
+   draft Status Log entries (date + summary) for manual paste into
+   each partner's Notion page. Link to each page for quick access.
 
 Do not send any Slack message, update any external system, or take
 any action beyond creating the Notion page. The Slack message is
@@ -248,22 +342,30 @@ draft-only for human review.
 1. **Never label 🟡 as "at risk" or "critical."** The correct
    framing is "lower activity" — it means less movement, not an
    emergency.
-1. **Never create a separate section for 🔴 integrations.** Red
-   health means paused/known — they appear in the full list but
-   don't get called out.
-1. **Kicked-off window is strictly 7 days.** Only integrations with
-   a Kick-Off date in the last 7 calendar days appear in the "new"
-   count and the Changes table.
-1. **Changes are based on `last_edited_time`.** Until Integration
-   Status is consistently populated, this is the best proxy for
-   movement. When status transitions become available, the
-   "What Changed" column should show actual transitions
-   (e.g., "Kicked Off → In Progress", "Health 🟢 → 🟡").
+1. **Show only active and recent integrations.** Long-certified
+   partners (>30 days) do not appear in the report. The report
+   answers: what's on track, what's close to GA, what's slipping.
+1. **Always include Target Date column.** Even if most are empty,
+   the column must appear — it signals the data gap and encourages
+   backfilling.
+1. **Always include "This Week" column.** Every active integration
+   must have a one-sentence summary of what changed. This is the
+   most valuable column for stakeholders — they should never need
+   to click into a partner page to understand current status.
+1. **Kicked-off window is strictly 7 days.** Integrations kicked off
+   within the last 7 days should note this in their "This Week"
+   summary (e.g., "Kicked off April 3 — scope call completed").
+   The main Active Integrations table shows ALL active integrations
+   regardless of kick-off date.
 1. **All partner names must link to their Notion integration page.**
    Use the page URL from the query results.
-1. **Be honest about data gaps.** If Integration Status is empty
-   across all records, note it in the data quality section — this
-   helps the team prioritize backfilling.
-1. **One report per week.** Step 5 checks for an existing report
+1. **Be honest about data gaps.** Surface missing dates and anomalies
+   in the data quality section — this helps the team prioritize
+   backfilling.
+1. **One report per week.** Step 7 checks for an existing report
    before creating. If a duplicate is found, warn the user and
    require confirmation.
+1. **Certification date definitions.** Certification Start = first
+   review meeting or first build submission for testing.
+   Certification Date (end) = when production credentials are
+   provided or the integration is posted in #releases.
